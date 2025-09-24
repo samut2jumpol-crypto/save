@@ -50,19 +50,20 @@
 <body>
   <div id="root"></div>
 
-  <script type="text/babel" data-presets="react">
+  <!-- เพิ่ม env preset เพื่อให้แปล optional chaining/modern JS -->
+  <script type="text/babel" data-presets="env,react">
     const { useEffect, useState } = React;
 
+    // ===== Helpers (เลี่ยง optional chaining และ replaceAll เพื่อความเข้ากันได้) =====
     const THB = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'THB', maximumFractionDigits: 2 });
-    const parseAmount = (x) => { const n = Number((x || '').toString().replaceAll(',', '')); return isNaN(n) ? 0 : n };
-    const uuid = () => (crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+    const parseAmount = (x) => { const s = (x||'').toString(); const n = Number(s.split(',').join('')); return isNaN(n) ? 0 : n; };
+    const uuid = () => (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).slice(2));
 
     const LS = { goal: 'ms.goal.v4', rows: 'ms.rows.v4', bills: 'ms.bills.v1', lastRun: 'ms.recurring.lastRun' };
     const CATS = ['ของกิน','เงินเดือน','เบี้ยเลี้ยง','ซื้อของ','ค่าเดินทาง','ค่าไฟ','ค่าเน็ต','อื่นๆ'];
 
-    const GlobalStyles = () => null; // CSS อยู่ใน <style/> แล้ว
+    const GlobalStyles = () => null;
 
-    /* Landing */
     function Landing({ onStart }) {
       return (
         <div className="center">
@@ -77,10 +78,9 @@
       );
     }
 
-    /* Goal */
     function GoalForm({ initial, onSave }){
-      const [amount, setAmount] = useState(initial?.amount ?? 0);
-      const [period, setPeriod] = useState(initial?.period ?? 'month');
+      const [amount, setAmount] = useState(initial && initial.amount != null ? initial.amount : 0);
+      const [period, setPeriod] = useState((initial && initial.period) || 'month');
       return (
         <div className="card">
           <h3 className="title">กำหนดเป้าหมายการออม</h3>
@@ -106,7 +106,6 @@
       );
     }
 
-    /* Add Form */
     function AddForm({ onAdd }){
       const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
       const [type, setType] = useState('expense');
@@ -139,21 +138,20 @@
       );
     }
 
-    /* Table Editor */
     function TableEditor({ rows, setRows }){
-      const setCell = (id, key, value) => setRows(rows.map(r => (r.id === id ? { ...r, [key]: value } : r)));
+      const setCell = (id, key, value) => setRows(rows.map(r => (r.id === id ? Object.assign({}, r, { [key]: value }) : r)));
       const remove = (id) => setRows(rows.filter(r => r.id !== id));
       const addRow = () => setRows([{ id: uuid(), date: new Date().toISOString().slice(0, 16), type: 'expense', category: '', note: '', amount: '' }, ...rows]);
 
       const importFromText = (text) => {
-        const trimmed = text.trim(); if (!trimmed) return;
-        const lines = trimmed.replaceAll('\r','').split('\n');
-        const next = [...rows];
+        const trimmed = (text||'').trim(); if (!trimmed) return;
+        const lines = trimmed.replace(/\r/g,'').split('\n');
+        const next = rows.slice();
         lines.forEach(line => {
-          const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+          const parts = line.indexOf('\t') >= 0 ? line.split('\t') : line.split(',');
           const r = { id: uuid(), date: new Date().toISOString().slice(0, 16), type: 'expense', category: '', note: '', amount: '' };
           if (parts[0] && !isNaN(Date.parse(parts[0]))) r.date = new Date(parts[0]).toISOString().slice(0, 16);
-          const t = (parts[1] || '').toLowerCase(); r.type = t.startsWith('i') ? 'income' : t.startsWith('e') ? 'expense' : 'expense';
+          const t = (parts[1] || '').toLowerCase(); r.type = t.indexOf('i') === 0 ? 'income' : 'expense';
           r.category = parts[2] || ''; r.note = parts[3] || ''; r.amount = parts[4] || '';
           next.push(r);
         });
@@ -214,9 +212,8 @@
       );
     }
 
-    /* List */
     function List({ rows, onDelete }){
-      const fmt = (s) => { try { return new Date(s).toLocaleString() } catch { return s } };
+      const fmt = (s) => { try { return new Date(s).toLocaleString() } catch (e) { return s } };
       return (
         <div className="card">
           <h3 className="title">ประวัติรายการ</h3>
@@ -227,7 +224,7 @@
                 <span className={'pill ' + r.type}>{r.type === 'income' ? 'รายรับ' : 'รายจ่าย'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {r.category || 'ทั่วไป'} {r.note && <span className="muted">— {r.note}</span>}
+                    {r.category || 'ทั่วไป'} {r.note ? <span className="muted">— {r.note}</span> : null}
                   </div>
                   <div className="muted" style={{ fontSize: 12 }}>{fmt(r.date)}</div>
                 </div>
@@ -240,18 +237,17 @@
       );
     }
 
-    /* Pie chart + Summary paragraph */
     function PieChart({ data }){
-      const positive = data.filter(d => d.value > 0);
-      const total = positive.reduce((s,d)=>s+d.value,0);
-      const getColor = (i) => `hsl(${(i*63)%360}, 70%, 55%)`;
+      const positive = data.filter(function(d){ return d.value > 0; });
+      const total = positive.reduce(function(s,d){ return s+d.value; },0);
+      const getColor = (i) => 'hsl(' + ((i*63)%360) + ',70%,55%)';
       const radius = 80, cx = 90, cy = 90; let angle = -Math.PI/2;
       if(total <= 0){
         return (
           <div>
-            <svg width={180} height={180} viewBox="0 0 180 180" aria-label="pie chart (empty)">
+            <svg width="180" height="180" viewBox="0 0 180 180" aria-label="pie chart (empty)">
               <circle cx="90" cy="90" r="80" fill="#f1f5f9" />
-              <text x="90" y="96" textAnchor="middle" fontSize="12" fill="#94a3b8">ไม่มีข้อมูล</text>
+              <text x="90" y="96" text-anchor="middle" font-size="12" fill="#94a3b8">ไม่มีข้อมูล</text>
             </svg>
           </div>
         );
@@ -260,20 +256,20 @@
         const color = getColor(0);
         return (
           <div>
-            <svg width={180} height={180} viewBox="0 0 180 180" aria-label="pie chart (single)">
+            <svg width="180" height="180" viewBox="0 0 180 180" aria-label="pie chart (single)">
               <circle cx="90" cy="90" r="80" fill={color} />
             </svg>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:6,marginTop:6}}>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{width:10,height:10,background:color,borderRadius:2,display:'inline-block'}}></span>
-                <span className="muted" style={{fontSize:12}}>{positive[0].label} — {THB(positive[0].value)} (100%)</span>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style={"width:10px;height:10px;background:"+color+";border-radius:2px;display:inline-block"}></span>
+                <span class="muted" style="font-size:12px">{positive[0].label} — {THB(positive[0].value)} (100%)</span>
               </div>
             </div>
           </div>
         );
       }
       const paths = [];
-      positive.forEach((d,i)=>{
+      positive.forEach(function(d,i){
         const portion = d.value / total;
         const theta = portion * Math.PI * 2;
         const x1 = cx + radius * Math.cos(angle);
@@ -283,35 +279,37 @@
         const y2 = cy + radius * Math.sin(angle);
         const large = theta > Math.PI ? 1 : 0;
         const color = getColor(i);
-        const path = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2} Z`;
-        paths.push(<path key={i} d={path} fill={color} />);
+        const path = 'M '+cx+' '+cy+' L '+x1+' '+y1+' A '+radius+' '+radius+' 0 '+large+' 1 '+x2+' '+y2+' Z';
+        paths.push(React.createElement('path', { key: i, d: path, fill: color }));
       });
       return (
         <div>
-          <svg width={180} height={180} viewBox="0 0 180 180" aria-label="pie chart">
+          <svg width="180" height="180" viewBox="0 0 180 180" aria-label="pie chart">
             <circle cx={cx} cy={cy} r={radius} fill="#f1f5f9" />
             {paths}
           </svg>
           <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:6,marginTop:6}}>
-            {positive.map((d,i)=>(
-              <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{width:10,height:10,background:getColor(i),borderRadius:2,display:'inline-block'}}></span>
-                <span className="muted" style={{fontSize:12}}>{d.label} — {THB(d.value)} ({Math.round((d.value/total)*100)}%)</span>
-              </div>
-            ))}
+            {positive.map(function(d,i){
+              return (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{width:10,height:10,background:getColor(i),borderRadius:2,display:'inline-block'}}></span>
+                  <span className="muted" style={{fontSize:12}}>{d.label} — {THB(d.value)} ({Math.round((d.value/total)*100)}%)</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
     }
 
     function Summary({ rows, goal }){
-      const income = rows.reduce((s,r)=>s+(r.type==='income'?parseAmount(r.amount):0),0);
-      const expense = rows.reduce((s,r)=>s+(r.type==='expense'?parseAmount(r.amount):0),0);
+      const income = rows.reduce(function(s,r){ return s+(r.type==='income'?parseAmount(r.amount):0); },0);
+      const expense = rows.reduce(function(s,r){ return s+(r.type==='expense'?parseAmount(r.amount):0); },0);
       const left = income - expense;
       const msg = left >= 0 ? 'เยี่ยม! เดินหน้าต่อไปทีละก้าว' : 'ใจเย็น ๆ จัดลำดับความสำคัญก่อนนะ';
       const catTotals = {};
-      rows.filter(r=>r.type==='expense').forEach(r=>{ const k = r.category || 'อื่นๆ'; catTotals[k] = (catTotals[k]||0) + parseAmount(r.amount); });
-      const pieData = Object.entries(catTotals).map(([label,value])=>({label, value}));
+      rows.filter(function(r){ return r.type==='expense'; }).forEach(function(r){ const k = r.category || 'อื่นๆ'; catTotals[k] = (catTotals[k]||0) + parseAmount(r.amount); });
+      const pieData = Object.keys(catTotals).map(function(k){ return {label:k, value:catTotals[k]}; });
       return (
         <div className="card">
           <h3 className="title">สรุป</h3>
@@ -323,7 +321,7 @@
           <div className="row cols-2">
             <div>
               <div className="muted">วันนี้คุณทำได้ดีแค่ไหน?</div>
-              <p>คงเหลือ {THB(left)} — {msg} {goal ? `| เป้าหมาย ${THB(goal.amount)} / ${goal.period==='day'?'วัน':goal.period==='month'?'เดือน':'ปี'}` : ''}</p>
+              <p>คงเหลือ {THB(left)} — {msg} {goal ? ('| เป้าหมาย '+THB(goal.amount)+' / '+(goal.period==='day'?'วัน':goal.period==='month'?'เดือน':'ปี')) : ''}</p>
               <div className="muted" style={{ fontSize: 12 }}>เคล็ดลับ: จดทุกค่าใช้จ่ายแม้เล็กน้อย ความสม่ำเสมอคือพลัง 💪</div>
             </div>
             <div>
@@ -335,7 +333,6 @@
       );
     }
 
-    /* Dividend & Growth */
     function DividendCalc(){
       const [principal,setPrincipal] = useState(100000);
       const [yieldPct,setYieldPct] = useState(5);
@@ -379,15 +376,14 @@
       );
     }
 
-    /* Recurring monthly bills */
     function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
 
     function RecurringBills({ bills, setBills, onProcess }){
       const [name,setName] = useState('');
       const [amount,setAmount] = useState('');
       const [day,setDayN] = useState(15);
-      const add = () => { if(!name || !amount) return; setBills([...bills, { id: uuid(), name, amount, day }]); setName(''); setAmount('') };
-      const remove = (id) => setBills(bills.filter(b => b.id!==id));
+      const add = () => { if(!name || !amount) return; setBills(bills.concat([{ id: uuid(), name, amount, day }])); setName(''); setAmount('') };
+      const remove = (id) => setBills(bills.filter(function(b){ return b.id!==id; }));
       return (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -402,17 +398,19 @@
           </div>
           <div className="list" style={{ marginTop: 10 }}>
             {bills.length === 0 && <div className="muted">ยังไม่มีรายการ</div>}
-            {bills.map(b => (
-              <div className="item" key={b.id}>
-                <span className="pill expense">ตัดวันที่ {b.day}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{b.name}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>จะหักอัตโนมัติทุกเดือน</div>
+            {bills.map(function(b){
+              return (
+                <div className="item" key={b.id}>
+                  <span className="pill expense">ตัดวันที่ {b.day}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{b.name}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>จะหักอัตโนมัติทุกเดือน</div>
+                  </div>
+                  <div style={{ fontWeight: 900, minWidth: 120, textAlign: 'right' }}>{THB(parseAmount(b.amount))}</div>
+                  <button className="btn danger" style={{ marginLeft: 6 }} onClick={()=>remove(b.id)}>ลบ</button>
                 </div>
-                <div style={{ fontWeight: 900, minWidth: 120, textAlign: 'right' }}>{THB(parseAmount(b.amount))}</div>
-                <button className="btn danger" style={{ marginLeft: 6 }} onClick={()=>remove(b.id)}>ลบ</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );
@@ -424,12 +422,12 @@
       const lastRunStr = localStorage.getItem(LS.lastRun);
       let cursor = lastRunStr ? new Date(lastRunStr) : todayYMD;
       if (cursor < todayYMD) cursor = new Date(cursor.getTime() + 24*3600*1000);
-      const updated = bills.map(b => ({...b}));
+      const updated = bills.map(function(b){ return Object.assign({}, b); });
       while (cursor <= todayYMD){
-        updated.forEach(b => {
+        updated.forEach(function(b){
           const billDay = Math.min(b.day, daysInMonth(cursor.getFullYear(), cursor.getMonth()));
-          const monthKey = `${cursor.getFullYear()}-${cursor.getMonth()+1}-${b.id}`;
-          const doneKey = `bill.done.${monthKey}`;
+          const monthKey = cursor.getFullYear()+'-'+(cursor.getMonth()+1)+'-'+b.id;
+          const doneKey = 'bill.done.'+monthKey;
           if (cursor.getDate() === billDay && !localStorage.getItem(doneKey)) {
             const d = new Date(cursor); d.setHours(9,0,0,0);
             addRow({ id: uuid(), date: d.toISOString().slice(0,16), type:'expense', category: b.name, note: 'ตัดทุกเดือน', amount: b.amount });
@@ -442,26 +440,25 @@
       localStorage.setItem(LS.lastRun, todayYMD.toISOString());
     }
 
-    /* App */
     function App(){
       const [landing,setLanding] = useState(true);
-      const [goal,setGoal] = useState(()=>{ try{ const raw = localStorage.getItem(LS.goal); return raw? JSON.parse(raw): null }catch{ return null } });
-      const [rows,setRows] = useState(()=>{ try{ return JSON.parse(localStorage.getItem(LS.rows)||'[]') }catch{ return [] } });
-      const [bills,setBills] = useState(()=>{ try{ return JSON.parse(localStorage.getItem(LS.bills)||'[]') }catch{ return [] } });
+      const [goal,setGoal] = useState(function(){ try{ const raw = localStorage.getItem(LS.goal); return raw? JSON.parse(raw): null }catch(e){ return null } });
+      const [rows,setRows] = useState(function(){ try{ return JSON.parse(localStorage.getItem(LS.rows)||'[]') }catch(e){ return [] } });
+      const [bills,setBills] = useState(function(){ try{ return JSON.parse(localStorage.getItem(LS.bills)||'[]') }catch(e){ return [] } });
 
-      useEffect(()=>{ localStorage.setItem(LS.rows, JSON.stringify(rows)) }, [rows]);
-      useEffect(()=>{ localStorage.setItem(LS.goal, JSON.stringify(goal)) }, [goal]);
-      useEffect(()=>{ localStorage.setItem(LS.bills, JSON.stringify(bills)) }, [bills]);
+      useEffect(function(){ localStorage.setItem(LS.rows, JSON.stringify(rows)) }, [rows]);
+      useEffect(function(){ localStorage.setItem(LS.goal, JSON.stringify(goal)) }, [goal]);
+      useEffect(function(){ localStorage.setItem(LS.bills, JSON.stringify(bills)) }, [bills]);
 
-      const addRow = (r) => setRows(prev => [r, ...prev]);
-      const deleteRow = (id) => setRows(prev => prev.filter(x=>x.id!==id));
+      const addRow = (r) => setRows(function(prev){ return [r].concat(prev); });
+      const deleteRow = (id) => setRows(function(prev){ return prev.filter(function(x){ return x.id!==id; }); });
 
-      useEffect(()=>{ if(!landing && bills.length) processRecurring(bills, setBills, addRow) }, [landing]);
+      useEffect(function(){ if(!landing && bills.length) processRecurring(bills, setBills, addRow) }, [landing]);
 
       if(landing) return (<><GlobalStyles /><Landing onStart={()=>setLanding(false)} /></>);
 
-      const income = rows.reduce((s,r)=>s+(r.type==='income'?parseAmount(r.amount):0),0);
-      const expense = rows.reduce((s,r)=>s+(r.type==='expense'?parseAmount(r.amount):0),0);
+      const income = rows.reduce(function(s,r){ return s+(r.type==='income'?parseAmount(r.amount):0); },0);
+      const expense = rows.reduce(function(s,r){ return s+(r.type==='expense'?parseAmount(r.amount):0); },0);
       const left = income - expense;
 
       return (
@@ -471,7 +468,7 @@
             <div className="brand">Money Saving</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={() => setLanding(true)}>กลับหน้าแรก</button>
-              {goal && <button className="btn" onClick={() => { localStorage.removeItem(LS.goal); setGoal(null); }}>รีเซ็ตเป้าหมาย</button>}
+              {goal ? <button className="btn" onClick={() => { localStorage.removeItem(LS.goal); setGoal(null); }}>รีเซ็ตเป้าหมาย</button> : null}
             </div>
           </div>
 
@@ -484,7 +481,7 @@
               </div>
             </div>
 
-            <div style={{ gridColumn: 'span 12' }}><GoalForm initial={goal} onSave={g => setGoal(g)} /></div>
+            <div style={{ gridColumn: 'span 12' }}><GoalForm initial={goal} onSave={function(g){ setGoal(g); }} /></div>
 
             <div style={{ gridColumn: 'span 12' }}><AddForm onAdd={addRow} /></div>
             <div style={{ gridColumn: 'span 12' }}><TableEditor rows={rows} setRows={setRows} /></div>
@@ -496,7 +493,7 @@
             <div style={{ gridColumn: 'span 6' }}><GrowthCalc /></div>
 
             <div style={{ gridColumn: 'span 12' }}>
-              <RecurringBills bills={bills} setBills={setBills} onProcess={() => processRecurring(bills, setBills, addRow)} />
+              <RecurringBills bills={bills} setBills={setBills} onProcess={function(){ processRecurring(bills, setBills, addRow); }} />
             </div>
           </div>
         </div>
