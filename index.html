@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Money Saving</title>
+  <meta name="description" content="Track income/expense, goals, recurring bills, dividends & growth — single-file app." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%232563eb'/%3E%3Cpath d='M32 14c9 0 16 5 16 12 0 5-4 9-10 11v5a2 2 0 1 1-4 0v-4.3a20 20 0 0 1-4 0V42a2 2 0 1 1-4 0v-5c-6-2-10-6-10-11 0-7 7-12 16-12Z' fill='white'/%3E%3C/svg%3E" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <style>
+    body{font-family:sans-serif;background:#f8fafc;margin:0;padding:0}
+    .container{width:min(1100px,92vw);margin:0 auto;padding:24px}
+    .center{display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}
+    .title-hero{font-weight:900;font-size:clamp(40px,6vw,72px);margin:0}
+    .btn{background:#2563eb;color:#fff;padding:12px 20px;border:none;border-radius:8px;cursor:pointer}
+    .card{background:#fff;padding:16px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.1);margin-bottom:16px}
+    input,select{padding:8px;width:100%;margin-bottom:8px}
+    .kpi{display:flex;gap:16px;margin-bottom:16px}
+    .kpi .box{flex:1;background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.1)}
+    .good{color:green}.bad{color:red}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const {useState} = React;
+
+function App(){
+  const [started,setStarted] = useState(false);
+  const [rows,setRows] = useState([]);
+  const [goal,setGoal] = useState({amount:0,period:"month"});
+
+  const addRow=(r)=>setRows([...rows,r]);
+
+  const income=rows.filter(r=>r.type==="income").reduce((s,r)=>s+Number(r.amount||0),0);
+  const expense=rows.filter(r=>r.type==="expense").reduce((s,r)=>s+Number(r.amount||0),0);
+  const remain=income-expense;
+
+  return !started ? (
+    <div className="center">
+      <div>
+        <h1 className="title-hero">Money Saving</h1>
+        <p>ติดตามรายรับ รายจ่าย และการออม</p>
+        <button className="btn" onClick={()=>setStarted(true)}>เริ่มใช้งาน</button>
+      </div>
+    </div>
+  ):(
+    <div className="container">
+      <div className="card">
+        <h3>กำหนดเป้าหมายการออม</h3>
+        <input type="number" placeholder="จำนวนเงิน" value={goal.amount} onChange={e=>setGoal({...goal,amount:e.target.value})}/>
+        <select value={goal.period} onChange={e=>setGoal({...goal,period:e.target.value})}>
+          <option value="day">ต่อวัน</option>
+          <option value="month">ต่อเดือน</option>
+          <option value="year">ต่อปี</option>
+        </select>
+      </div>
+      <div className="card">
+        <h3>เพิ่มรายการ</h3>
+        <AddForm onAdd={addRow}/>
+      </div>
+      <div className="card">
+        <h3>สรุป</h3>
+        <div className="kpi">
+          <div className="box">คงเหลือ: {remain}</div>
+          <div className="box good">รายรับ: {income}</div>
+          <div className="box bad">รายจ่าย: {expense}</div>
+        </div>
+        <Table rows={rows}/>
+      </div>
+    </div>
+  );
+}
+
+function AddForm({onAdd}){
+  const [type,setType]=useState("expense");
+  const [category,setCategory]=useState("");
+  const [amount,setAmount]=useState("");
+  const add=()=>{if(!amount)return;onAdd({type,category,amount});setAmount("");setCategory("");};
+  return <div>
+    <select value={type} onChange={e=>setType(e.target.value)}>
+      <option value="income">รายรับ</option>
+      <option value="expense">รายจ่าย</option>
+    </select>
+    <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="หมวดหมู่"/>
+    <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="จำนวนเงิน"/>
+    <button className="btn" onClick={add}>เพิ่ม</button>
+  </div>;
+}
+
+function Table({rows}){
+  return <table>
+    <thead><tr><th>ประเภท</th><th>หมวด</th><th>จำนวน</th></tr></thead>
+    <tbody>
+      {rows.map((r,i)=><tr key={i}><td>{r.type}</td><td>{r.category}</td><td>{r.amount}</td></tr>)}
+    </tbody>
+  </table>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
+</script>
+</body>
+</html>
